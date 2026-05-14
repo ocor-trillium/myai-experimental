@@ -1,0 +1,50 @@
+# Dependencias
+node_modules
+.pnp
+.pnp.js
+
+# Build
+dist
+dist-ssr
+build
+*.local
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Caches y temporales
+.cache
+.tmp
+.parcel-cache
+.eslintcache
+.vite
+coverage
+*.tsbuildinfo
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.idea
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# Variables de entorno (NUNCA commitear secretos)
+.env
+.env.*
+!.env.example
+
+# Credenciales / claves (defensa en profundidad)
+*.pem
+*.key
+id_rsa*
+*.kubeconfig
+*.pkcs12
+*.pfx
+service-account*.json
+.aws/credentials
