@@ -36,16 +36,111 @@ npm ci
 .
 ├── public/                 # Static assets served as-is
 ├── src/
-│   ├── components/         # Reusable components (includes ErrorBoundary)
+│   ├── components/         # Reusable components (Layout, ErrorBoundary, …)
 │   ├── config/env.ts       # Typed reader for VITE_* variables
-│   ├── styles/             # Global CSS
-│   ├── App.tsx
-│   └── main.tsx
+│   ├── views/              # Route-level components (Home, Experiments, …)
+│   ├── styles/index.css    # Tailwind import, design tokens, global rules
+│   ├── App.tsx             # Router (BrowserRouter + Routes)
+│   └── main.tsx            # ReactDOM root + ErrorBoundary
 ├── nginx/                  # Production runtime configuration
 ├── Dockerfile              # Hardened multi-stage build
 ├── vite.config.ts
 └── tsconfig*.json
 ```
+
+## Styling
+
+Styling is handled with **Tailwind CSS v4** through the official Vite plugin
+(`@tailwindcss/vite`). There is **no `tailwind.config.js`** — in v4 everything
+that used to live there is now expressed in CSS.
+
+### Where styles live
+
+| File / location                                  | What goes here                                                                                                                                          |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`src/styles/index.css`](./src/styles/index.css) | The single source of truth: Tailwind import, design tokens (`@theme`), and global rules for `body`, `#root`, etc. Imported once from `src/main.tsx`.    |
+| `src/components/*.tsx`, `src/views/*.tsx`        | All component-level styling, written **inline as Tailwind utility classes** (`className="flex items-center …"`). Do not create per-component CSS files. |
+| [`vite.config.ts`](./vite.config.ts)             | Wires the `tailwindcss()` plugin into the build pipeline.                                                                                               |
+
+### How it works
+
+`src/styles/index.css` looks like this:
+
+```css
+@import 'tailwindcss';
+
+@theme {
+  --color-bg: #0b1020;
+  --color-surface: #131a30;
+  --color-accent: #6366f1;
+  /* … */
+}
+
+body {
+  margin: 0;
+}
+
+#root {
+  /* layout / background / typography for the whole app shell */
+}
+```
+
+- `@import 'tailwindcss';` pulls in Tailwind's preflight + utilities.
+- The `@theme { … }` block declares **design tokens**. Any `--color-*`
+  declared here is automatically available as a Tailwind utility — for
+  example `--color-accent: #6366f1` enables `bg-accent`, `text-accent`,
+  `border-accent`, etc. Same pattern for spacing, radius, font, etc.
+- The plain CSS rules below (`body`, `#root`, `:root`) are intentionally
+  scoped to the app shell — they handle the full-viewport layout and
+  background gradient that no utility could express cleanly. Avoid adding
+  more global rules; prefer utilities on the elements themselves.
+
+### How to use it
+
+1. **Style components with utility classes**, never with new CSS files:
+
+   ```tsx
+   <button className="rounded-full bg-gradient-to-br from-indigo-500 to-cyan-500 px-5 py-2 font-semibold text-white hover:-translate-y-0.5">
+     Click me
+   </button>
+   ```
+
+2. **Add a new design token** by extending `@theme` in
+   `src/styles/index.css`:
+
+   ```css
+   @theme {
+     --color-warning: #f59e0b;
+     --radius-pill: 999px;
+   }
+   ```
+
+   Now `bg-warning`, `text-warning`, `rounded-pill` work everywhere.
+
+3. **Override a token** by redeclaring it inside `@theme` — the rest of the
+   app picks it up automatically since utilities resolve to CSS variables at
+   build time.
+
+4. **Need a one-off utility that Tailwind doesn't have?** Use Tailwind's
+   arbitrary-value syntax (`px-[clamp(1rem,4vw,2.5rem)]`,
+   `grid-cols-[repeat(auto-fit,minmax(180px,1fr))]`) before reaching for raw
+   CSS. Genuine cross-cutting rules can go in `src/styles/index.css`, but
+   keep that file small.
+
+5. **Reference**: official docs at
+   <https://tailwindcss.com/docs> (Tailwind v4 syntax). The `@theme`
+   directive is documented under
+   <https://tailwindcss.com/docs/theme>.
+
+### What not to do
+
+- Don't create `*.module.css` or `*.css` files alongside components — they
+  bypass Tailwind's purge and grow the bundle.
+- Don't add Tailwind classes to global `index.css`. The `@apply` directive
+  is intentionally avoided here; utilities belong on the JSX.
+- Don't put theme values (colors, radii, spacing) directly in component
+  classes as hex codes or pixel values. Add them as tokens in `@theme` so
+  the design stays consistent.
 
 ## Environment variables
 
@@ -284,7 +379,9 @@ kubectl set image deployment/myai-experimental \
 
 ## Notes for extending
 
-- **Routing**: add `react-router-dom` when the second view appears.
+- **New view**: add a component under `src/views/`, then register a `<Route>`
+  in [`src/App.tsx`](./src/App.tsx) and (optionally) a `NavLink` in
+  [`src/components/Layout.tsx`](./src/components/Layout.tsx).
 - **Remote state**: `@tanstack/react-query` for fetch + cache.
 - **Telemetry**: hook `ErrorBoundary.componentDidCatch` into Sentry/Datadog.
 - **Feature flags**: read in `src/config/env.ts` with a `VITE_FLAG_*` prefix.
