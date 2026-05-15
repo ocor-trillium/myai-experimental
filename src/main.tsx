@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 
 import App from '@/App';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { RoleProvider } from '@/contexts/RoleContext';
 import '@/styles/index.css';
 
 const rootEl = document.getElementById('root');
@@ -14,7 +15,9 @@ if (!rootEl) {
 createRoot(rootEl).render(
   <StrictMode>
     <ErrorBoundary>
-      <App />
+      <RoleProvider>
+        <App />
+      </RoleProvider>
     </ErrorBoundary>
   </StrictMode>,
 );

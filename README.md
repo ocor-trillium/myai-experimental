@@ -1,8 +1,11 @@
-# Trillium · MyAI (experimental)
+# Trillium · Onboarding (experimental)
 
-Base template to experiment with Trillium's in-house AI, built with
-**React 18 + TypeScript + Vite** and ready to run in production behind an
-HTTPS edge.
+Onboarding portal powered by Trillium's in-house AI (Maya). Built with
+**React 18 + TypeScript + Vite + Tailwind v4 + React Router**, ready to run
+in production behind an HTTPS edge.
+
+The full backlog this app covers is in
+[`OnboardingContext.md`](./OnboardingContext.md) (`OB-01` … `OB-08`).
 
 ---
 
@@ -36,17 +39,80 @@ npm ci
 .
 ├── public/                 # Static assets served as-is
 ├── src/
-│   ├── components/         # Reusable components (Layout, ErrorBoundary, …)
+│   ├── components/         # Layout, RoleSwitcher, ErrorBoundary, ui/*
+│   ├── contexts/           # RoleContext + useRole hook
+│   ├── hooks/              # useAsync (no react-query, plain async/useState)
 │   ├── config/env.ts       # Typed reader for VITE_* variables
-│   ├── views/              # Route-level components (Home, Experiments, …)
+│   ├── types/domain.ts     # All domain models (Employee, Phase, Tool, …)
+│   ├── mocks/              # Fixtures used while integrations are stubbed
+│   ├── services/           # Stubbed clients for every external system
+│   ├── views/              # Route-level components (Home, Maya, Team, …)
 │   ├── styles/index.css    # Tailwind import, design tokens, global rules
-│   ├── App.tsx             # Router (BrowserRouter + Routes)
-│   └── main.tsx            # ReactDOM root + ErrorBoundary
+│   ├── App.tsx             # Router (BrowserRouter + Routes + RequireRole)
+│   └── main.tsx            # ReactDOM root + ErrorBoundary + RoleProvider
 ├── nginx/                  # Production runtime configuration
 ├── Dockerfile              # Hardened multi-stage build
 ├── vite.config.ts
+├── OnboardingContext.md    # Source of truth for the OB-01..OB-08 backlog
 └── tsconfig*.json
 ```
+
+## Application surfaces
+
+The header navigation is filtered by the active role (use the **Role**
+selector in the top-right to switch between `employee`, `manager`, `admin`).
+
+| Route         | Story | Roles                    | Purpose                                                                  |
+| ------------- | ----- | ------------------------ | ------------------------------------------------------------------------ |
+| `/`           | —     | employee, manager, admin | Role-aware home with shortcuts                                           |
+| `/onboarding` | OB-01 | employee                 | Progress across the 4 phases (Discovery → Setup → Access → Integration)  |
+| `/maya`       | OB-02 | employee                 | Conversational onboarding with Adaptive Cards (email/phone/ID validated) |
+| `/history`    | OB-03 | employee                 | Plain-language timeline of what happened and why                         |
+| `/team`       | OB-04 | manager, admin           | New-hire dashboard with filters and SLA alerts                           |
+| `/tools`      | OB-05 | manager, admin           | Approve Jira / GitLab / Slack / etc. one-by-one or as a batch            |
+| `/feedback`   | OB-07 | manager, admin           | Feedback inbox auto-classified by MYAI and routed to Teams               |
+| `/canvas`     | OB-08 | admin                    | Project Canvas linkage (Zoho · Contract · SharePoint) with drift sync    |
+| `/ecosystem`  | OB-06 | employee, manager, admin | Health of every external service + maintenance windows                   |
+
+## Integration stubs
+
+Every external system has a typed client under `src/services/*.ts` that
+returns mock data with simulated latency. Each one carries a `TODO(...)`
+that documents the real endpoint to wire later. Nothing in this repo talks
+to a real third-party API yet.
+
+| Service file           | Story         | Real backend (TODO)                                            |
+| ---------------------- | ------------- | -------------------------------------------------------------- |
+| `employeesService.ts`  | OB-01, OB-04  | `GET /employees`                                               |
+| `progressService.ts`   | OB-01         | `GET /employees/{id}/onboarding/progress`                      |
+| `myaiService.ts`       | OB-02, OB-07  | `POST /myai/chat` (SSE), `POST /myai/classify`                 |
+| `historyService.ts`    | OB-03         | `GET /employees/{id}/history` (plain-language transformation)  |
+| `toolsService.ts`      | OB-05         | `POST /employees/{id}/tools/approve-all` and friends           |
+| `ecosystemService.ts`  | OB-06         | `GET /ecosystem/snapshot`, `WS /ecosystem/stream`              |
+| `feedbackService.ts`   | OB-07         | `POST /feedback` → MYAI classify → Teams notify                |
+| `teamsService.ts`      | OB-07         | `POST /integrations/teams/notify` (allowlisted channels only)  |
+| `sharePointService.ts` | cross-cutting | `POST /sharepoint/sign` (1h signed URLs)                       |
+| `canvasService.ts`     | OB-08         | `GET /canvas/{id}`, `POST /canvas/{id}/sync`, `POST /push`     |
+| `hrisService.ts`       | cross-cutting | `GET /hris/{provider}/employees/{id}` (Deel + Gusto, redacted) |
+| `zohoService.ts`       | cross-cutting | `GET /zoho/projects/{zohoProjectId}` (read-only from the BFF)  |
+| `transport.ts`         | cross-cutting | `withCircuitBreaker` — keep when wiring real endpoints         |
+
+### Security guardrails baked into the stubs
+
+- **Circuit breaker.** `withCircuitBreaker` short-circuits any service after
+  5 consecutive failures (30 s cooldown), satisfying the
+  "Containment of Loops" requirement from `OnboardingContext.md`.
+- **Zero-chat monitoring.** Maya only sends what the user explicitly typed.
+  No focus / clipboard / passive signals.
+- **Teams allowlist.** `notifyTeams` rejects any channel not on the
+  in-code allowlist.
+- **Signed URLs.** `sharePointService.getSignedUrl` returns
+  `expiresAt = now + 1h`, matching the spec's TTL.
+- **No tokens in the browser.** Every comment in the services makes the
+  same point: third-party tokens (Zoho, Deel, Gusto, GitLab, Slack, Teams,
+  SharePoint) live in the BFF, never in this bundle.
+- **Anti-duplication.** `canvasService` writes are idempotent on
+  `employeeId` to prevent the duplicate entries flagged in OB-08.
 
 ## Styling
 
@@ -380,9 +446,19 @@ kubectl set image deployment/myai-experimental \
 ## Notes for extending
 
 - **New view**: add a component under `src/views/`, then register a `<Route>`
-  in [`src/App.tsx`](./src/App.tsx) and (optionally) a `NavLink` in
-  [`src/components/Layout.tsx`](./src/components/Layout.tsx).
-- **Remote state**: `@tanstack/react-query` for fetch + cache.
+  in [`src/App.tsx`](./src/App.tsx) (wrap with `<RequireRole allow={[…]}>`
+  if it should be role-gated) and add a `NavLink` in
+  [`src/components/Layout.tsx`](./src/components/Layout.tsx) with the same
+  `roles` array.
+- **Wiring a real backend**: open the relevant `src/services/*.ts`, replace
+  the mock with a real `fetch` call to `config.apiBaseUrl`, keep the
+  `withCircuitBreaker` wrapper, drop the matching `TODO(...)` comment.
+  All views consume services through stable function signatures, so the
+  swap is local to one file.
+- **Remote state**: `@tanstack/react-query` is the path forward when
+  manual `useAsync` becomes painful (caching, deduping, refetch on focus).
 - **Telemetry**: hook `ErrorBoundary.componentDidCatch` into Sentry/Datadog.
 - **Feature flags**: read in `src/config/env.ts` with a `VITE_FLAG_*` prefix.
-- **Tests**: `vitest` + `@testing-library/react` once there is testable logic.
+- **Tests**: `vitest` + `@testing-library/react` once there is testable
+  logic. The services are pure functions over fixtures and are the easiest
+  thing to start covering.
